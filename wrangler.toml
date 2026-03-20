@@ -1,0 +1,15 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "videotool"
+compatibility_date = "2024-03-20"
+pages_build_output_dir = "dist"
+
+[vars]
+# You can add environment variables here
+NODE_VERSION = "20"
+
+[[env.production.assets.headers]]
+# Cross-Origin Isolation headers for SharedArrayBuffer (ffmpeg.wasm)
+path = "/*"
+[env.production.assets.headers.values]
+Cross-Origin-Opener-Policy = "same-origin"
+Cross-Origin-Embedder-Policy = "require-corp"
