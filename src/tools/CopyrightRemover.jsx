@@ -32,8 +32,8 @@ export default function CopyrightRemover() {
 
   const processVideo = async () => {
     if (!file) return;
-    setProcessing(true); setProgress(0); setOutputBlob(null); setStatusText('Probing duration...');
-    setFragStatus([]);
+    setProcessing(true); setProgress(0); setOutputBlob(null);
+    setFragStatus([]); setStatusText('Initializing WASM...');
     const onP=({progress})=>setProgress(progress); ffmpeg.on('progress',onP);
     try {
       const dur = await getDuration(file);
@@ -41,37 +41,61 @@ export default function CopyrightRemover() {
       const inp=`inp_${file.name.replace(/[^a-zA-Z0-9.]/g,'_')}`;
       const ext=file.name.split('.').pop();
       await ffmpeg.writeFile(inp, await fetchFile(file));
+
       const segs=[]; let cur=0; let i=0;
-      const statuses=[];
-      while(cur<dur){
-        const end=Math.min(cur+segL,dur);
-        const sn=`seg_${i}.${ext}`;
-        statuses.push({ name: sn, status:'pending' });
-        setFragStatus([...statuses]);
-        setStatusText(`Fragment ${i+1} of ${Math.ceil((dur)/(segL+skipL))}...`);
-        setProgress(cur/dur*0.88);
-        await ffmpeg.exec(['-ss',cur.toString(),'-i',inp,'-t',(end-cur).toString(),'-c','copy',sn]);
-        statuses[i].status='done';
-        setFragStatus([...statuses]);
-        segs.push(sn); cur=end+skipL; i++;
+      const batchSize = 50; // process 50 segments at a time to avoid OOM
+
+      while(cur < dur) {
+        const batchArgs = ['-i', inp];
+        const batchSegs = [];
+
+        for(let j=0; j<batchSize && cur<dur; j++) {
+          const end = Math.min(cur+segL, dur);
+          const sn = `s_${i}.${ext}`;
+          batchArgs.push('-ss', cur.toFixed(3), '-t', (end-cur).toFixed(3), '-c', 'copy', sn);
+          batchSegs.push(sn);
+          cur = end + skipL;
+          i++;
+        }
+
+        setStatusText(`Cutting batch ${Math.ceil(i/batchSize)}...`);
+        await ffmpeg.exec(batchArgs);
+        segs.push(...batchSegs);
+        setFragStatus(segs.map(s => ({ name: s, status: 'done' })));
+        setProgress((cur/dur) * 0.85);
       }
-      await ffmpeg.deleteFile(inp);
-      if(shuffle){setStatusText('Shuffling...');final.sort(()=>Math.random()-0.5);}
-      setStatusText('Concatenating...'); setProgress(0.92);
-      await ffmpeg.writeFile('concat.txt', new TextEncoder().encode(final.map(s=>`file '${s}'`).join('\n')));
-      const out=`bypassed.${ext}`;
-      await ffmpeg.exec(['-f','concat','-safe','0','-i','concat.txt','-c','copy',out]);
-      const data=await ffmpeg.readFile(out);
-      setOutputBlob(new Blob([data.buffer],{type:file.type||'video/mp4'}));
-      await ffmpeg.deleteFile('concat.txt'); await ffmpeg.deleteFile(out);
+
+      await ffmpeg.deleteFile(inp); // Clear original
+
+      let final = [...segs];
+      if(shuffle) {
+        setStatusText('Shuffling fragments...');
+        final.sort(() => Math.random() - 0.5);
+      }
+
+      setStatusText('Stitching back together...');
+      await ffmpeg.writeFile('concat.txt', new TextEncoder().encode(final.map(s => `file '${s}'`).join('\n')));
+      const out = `final_bypassed.${ext}`;
+      await ffmpeg.exec(['-f', 'concat', '-safe', '0', '-i', 'concat.txt', '-c', 'copy', out]);
+
+      const data = await ffmpeg.readFile(out);
+      setOutputBlob(new Blob([data.buffer], { type: file.type || 'video/mp4' }));
+
+      // Cleanup
+      await ffmpeg.deleteFile('concat.txt');
+      await ffmpeg.deleteFile(out);
       for(const s of segs) await ffmpeg.deleteFile(s);
+
       setProgress(1);
-    } catch(e){
-      console.error(e);
-      const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : 'WASM Abort/OOM');
+      setStatusText('Complete');
+    } catch(e) {
+      console.error('Processing error:', e);
+      const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : 'WASM memory limit reached. Try larger segments (8s+) to reduce file count.');
       setStatusText('Error: ' + msg);
+    } finally {
+      setProcessing(false);
+      ffmpeg.off('progress',onP);
     }
-    finally{setProcessing(false);ffmpeg.off('progress',onP);}
   };
 
   const NumInput=({label,sub,value,onChange})=>(
