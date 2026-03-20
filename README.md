@@ -79,18 +79,18 @@ These are pre-configured for all three environments:
 | Environment | Config File |
 |-------------|-------------|
 | Local dev | `vite.config.js` → `server.headers` |
-| **Cloudflare Pages** | `public/_headers` |
+| **Cloudflare Pages** | `public/_headers` **OR** `wrangler.toml` |
 | **Vercel** | `vercel.json` |
 
 ---
 
 ## ☁️ Deploy to Cloudflare Pages
 
-1. Click the **Deploy to Cloudflare Pages** button above **or** fork this repo and connect it in the [Cloudflare Dashboard](https://dash.cloudflare.com/)
+1. Click the **Deploy to Cloudflare Pages** button above **or** fork this repo and connect it in the [Cloudflare Dashboard](https://dash.cloudflare.com/) 
 2. Build settings:
    - **Build command**: `npm run build`
    - **Output directory**: `dist`
-3. The `public/_headers` file automatically configures COOP/COEP — no extra setup needed.
+3. The `wrangler.toml` file (or `public/_headers`) automatically configures COOP/COEP — no extra setup needed.
 
 ## ▲ Deploy to Vercel
 
