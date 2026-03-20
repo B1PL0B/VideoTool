@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import FileUploader from '../components/FileUploader';
 import ProgressBar from '../components/ProgressBar';
 import VideoPreview from '../components/VideoPreview';
+import { downloadBlob } from '../utils/download';
 import { useFFmpeg } from '../context/FFmpegContext';
 import { fetchFile } from '@ffmpeg/util';
 import { Film, Music, CheckCircle } from 'lucide-react';
@@ -94,9 +95,9 @@ export default function AudioMerger() {
           style={{background:'var(--success-bg)',border:'1px solid var(--success-border)'}}>
           <CheckCircle size={34} className="text-emerald-500" strokeWidth={1.5}/>
           <h3 className="font-heading font-semibold text-emerald-500">Mux Complete!</h3>
-          <a href={URL.createObjectURL(outputBlob)} download={`muxed_${videoFile.name}`}
+          <button onClick={() => downloadBlob(outputBlob, `muxed_${videoFile.name}`)}
             className="px-8 py-3 rounded-xl font-heading font-semibold text-sm cursor-pointer transition-all hover:scale-105 text-emerald-600"
-            style={{background:'var(--success-bg)',border:'1px solid var(--success-border)'}}>Download Muxed Video</a>
+            style={{background:'var(--success-bg)',border:'1px solid var(--success-border)'}}>Download Muxed Video</button>
         </div>
       )}
     </div>

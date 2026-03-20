@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import FileUploader from '../components/FileUploader';
 import ProgressBar from '../components/ProgressBar';
+import { downloadBlob } from '../utils/download';
 import { useFFmpeg } from '../context/FFmpegContext';
 import { fetchFile } from '@ffmpeg/util';
 import { GripVertical, Trash2, CheckCircle, Info, Plus } from 'lucide-react';
@@ -59,7 +60,7 @@ export default function BatchCutter() {
       if (r.blob) zip.file(r.name, r.blob);
     }
     const blob = await zip.generateAsync({type:'blob'});
-    const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='clips.zip'; a.click();
+    downloadBlob(blob, 'clips.zip');
   };
 
   return (
@@ -133,7 +134,7 @@ export default function BatchCutter() {
               <div key={i} className="flex items-center gap-2 text-xs font-mono px-2 py-1.5 rounded-lg" style={{background:'var(--bg-pill)'}}>
                 {r.blob ? <CheckCircle size={12} className="text-emerald-500"/> : <span className="text-rose-500">✗</span>}
                 <span className="truncate" style={{color:r.blob?'var(--text-primary)':'#f43f5e'}}>{r.name}</span>
-                {r.blob && <a href={URL.createObjectURL(r.blob)} download={r.name} className="ml-auto text-indigo-500 hover:underline cursor-pointer">↓</a>}
+                {r.blob && <button onClick={() => downloadBlob(r.blob, r.name)} className="ml-auto text-indigo-500 hover:underline cursor-pointer">↓</button>}
               </div>
             ))}
           </div>

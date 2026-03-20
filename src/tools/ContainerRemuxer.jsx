@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import FileUploader from '../components/FileUploader';
 import ProgressBar from '../components/ProgressBar';
+import { downloadBlob } from '../utils/download';
 import { useFFmpeg } from '../context/FFmpegContext';
 import { fetchFile } from '@ffmpeg/util';
 import { Film, CheckCircle, Info, AlertCircle } from 'lucide-react';
@@ -112,9 +113,9 @@ export default function ContainerRemuxer() {
           <CheckCircle size={34} className="text-emerald-500" strokeWidth={1.5}/>
           <div className="text-center"><h3 className="font-heading font-semibold text-emerald-500 text-lg">Remux Complete!</h3>
             <p className="text-sm mt-1 font-body" style={{color:'var(--text-muted)'}}>Bit-perfect container swap</p></div>
-          <a href={URL.createObjectURL(outputBlob)} download={`${file.name.replace(/\.[^.]+$/,'')}.${target}`}
+          <button onClick={() => downloadBlob(outputBlob, `${file.name.replace(/\.[^.]+$/, '')}.${target}`)}
             className="px-8 py-3 rounded-xl font-heading font-semibold text-sm cursor-pointer transition-all hover:scale-105 text-emerald-600"
-            style={{background:'var(--success-bg)',border:'1px solid var(--success-border)'}}>Download .{target} File</a>
+            style={{background:'var(--success-bg)',border:'1px solid var(--success-border)'}}>Download .{target} File</button>
         </div>
       )}
     </div>

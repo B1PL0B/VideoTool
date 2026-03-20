@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import FileUploader from '../components/FileUploader';
 import ProgressBar from '../components/ProgressBar';
+import { downloadBlob } from '../utils/download';
 import { useFFmpeg } from '../context/FFmpegContext';
 import { fetchFile } from '@ffmpeg/util';
 import { Eye, CheckCircle, Info, Plus, Trash2 } from 'lucide-react';
@@ -65,7 +66,7 @@ export default function ThumbnailExtractor() {
     const zip=new JSZip();
     thumbs.forEach(t=>zip.file(t.name,t.blob));
     const blob=await zip.generateAsync({type:'blob'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='thumbnails.zip'; a.click();
+    downloadBlob(blob, 'thumbnails.zip');
   };
 
   return (
@@ -149,9 +150,9 @@ export default function ThumbnailExtractor() {
           <div className="flex items-center justify-between">
             <h3 className="font-heading font-semibold text-lime-500">{thumbs.length} frame{thumbs.length>1?'s':''} extracted</h3>
             {thumbs.length===1 ? (
-              <a href={thumbs[0].url} download={thumbs[0].name}
+              <button onClick={() => downloadBlob(thumbs[0].blob, thumbs[0].name)}
                 className="px-4 py-2 rounded-lg font-heading font-semibold text-sm cursor-pointer transition-all hover:scale-105 text-lime-600"
-                style={{background:'rgba(132,204,22,0.10)',border:'1px solid rgba(132,204,22,0.30)'}}>↓ Download</a>
+                style={{background:'rgba(132,204,22,0.10)',border:'1px solid rgba(132,204,22,0.30)'}}>↓ Download</button>
             ) : (
               <button onClick={downloadZip} className="px-4 py-2 rounded-lg font-heading font-semibold text-sm cursor-pointer transition-all hover:scale-105 text-lime-600"
                 style={{background:'rgba(132,204,22,0.10)',border:'1px solid rgba(132,204,22,0.30)'}}>⬇ Download ZIP</button>
@@ -159,13 +160,14 @@ export default function ThumbnailExtractor() {
           </div>
           <div className="grid grid-cols-3 gap-2 max-h-56 overflow-y-auto scrollbar-hide">
             {thumbs.map((t,i)=>(
-              <a key={i} href={t.url} download={t.name} className="group relative rounded-xl overflow-hidden cursor-pointer block"
+              <div key={i} onClick={() => downloadBlob(t.blob, t.name)}
+                className="group relative rounded-xl overflow-hidden cursor-pointer block"
                 style={{border:'1px solid var(--border-card)'}}>
                 <img src={t.url} alt={t.name} className="w-full h-20 object-cover transition-all group-hover:scale-105"/>
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center">
                   <span className="opacity-0 group-hover:opacity-100 text-white text-xs font-bold">↓</span>
                 </div>
-              </a>
+              </div>
             ))}
           </div>
         </div>

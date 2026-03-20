@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import FileUploader from '../components/FileUploader';
 import ProgressBar from '../components/ProgressBar';
+import { downloadBlob } from '../utils/download';
 import VideoPreview from '../components/VideoPreview';
 import { useFFmpeg } from '../context/FFmpegContext';
 import { fetchFile } from '@ffmpeg/util';
@@ -117,9 +118,9 @@ export default function AudioExtractor() {
           <CheckCircle size={34} className="text-emerald-500" strokeWidth={1.5}/>
           <div className="text-center"><h3 className="font-heading font-semibold text-emerald-500 text-lg">Extraction Complete</h3>
             <p className="text-sm mt-1 font-body" style={{color:'var(--text-muted)'}}>Format: <span className="text-amber-500 font-mono">{detectedExt}</span></p></div>
-          <a href={URL.createObjectURL(outputBlob)} download={`audio_${file.name.split('.')[0]}${detectedExt}`}
+          <button onClick={() => downloadBlob(outputBlob, `audio_${file.name.split('.')[0]}${detectedExt}`)}
             className="px-8 py-3 rounded-xl font-heading font-semibold text-sm cursor-pointer transition-all hover:scale-105 text-emerald-600"
-            style={{background:'var(--success-bg)',border:'1px solid var(--success-border)'}}>Download Audio</a>
+            style={{background:'var(--success-bg)',border:'1px solid var(--success-border)'}}>Download Audio</button>
         </div>
       )}
     </div>

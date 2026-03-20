@@ -7,18 +7,38 @@
 
 ---
 
-## ✨ Features
+## ✨ 13 Lossless Tools (Categorized)
 
-All 6 tools run **entirely in your browser** using WebAssembly. Nothing ever leaves your machine.
+All tools run **100% locally** in your browser using WebAssembly. High-performance, zero re-encoding, and total privacy.
 
+### 🎬 Cut & Trim
 | Tool | Description | FFmpeg Strategy |
 |------|-------------|-----------------|
-| 🛡️ **Copyright Remover** | Split into fragments, skip micro-gaps, optionally shuffle, re-merge | Multi-pass `-c copy` + concat demuxer |
-| ✂️ **Lossless Video Cutter** | Trim A→B with keyframe-snap fast seek | `-ss` input seek + `-c copy` |
-| 🔗 **Lossless Video Merger** | Concatenate same-codec clips | concat demuxer `-c copy` |
-| 🎵 **Audio Extractor** | Rip raw audio track with auto codec detection | `-vn -acodec copy` |
-| 🎞️ **Video & Audio Muxer** | Replace or add audio tracks losslessly | `-map` stream selection + `-c copy` |
-| 📝 **Subtitle Extractor** | Extract embedded SRT/VTT soft subtitles | `-map 0:s:0 -c copy` |
+| **Video Cutter** | Trim A→B with interactive A/B slider overlay | `-ss` input seek + `-c copy` |
+| **Batch Cutter** | Define multiple segments → download as ZIP | Multi-pass `-c copy` |
+| **Copyright Remover** | Disrupt fingerprints by skipping micro-gaps | Multi-pass `-c copy` + concat |
+
+### 🔗 Merge & Combine
+| Tool | Description | FFmpeg Strategy |
+|------|-------------|-----------------|
+| **Video Merger** | Drag-and-drop reordering with thumbnails | concat demuxer `-c copy` |
+| **A/V Muxer** | Replace or add audio tracks to video | `-map` selection + `-c copy` |
+| **Subtitle Embedder** | Add soft subtitles (SRT/VTT/ASS) to MKV | `-c copy` mux into Matroska |
+
+### 🗜️ Extract & Strip
+| Tool | Description | FFmpeg Strategy |
+|------|-------------|-----------------|
+| **Audio Extractor** | Rip tracks with auto-detect + track picker | `-vn -acodec copy` |
+| **Subtitle Extractor** | Extract all soft subs as SRT/VTT → ZIP | `-map 0:s:i -c copy` |
+| **Thumbnail Extractor** | Single frame or batch-every-N-seconds | `-ss` + `-vframes 1` (PNG/JPG) |
+| **Remove Audio** | Strip all audio tracks from a video file | `-an -c:v copy` |
+
+### 🛠️ Convert & Utility
+| Tool | Description | FFmpeg Strategy |
+|------|-------------|-----------------|
+| **Container Remuxer** | Lossless MKV ↔ MP4 ↔ MOV ↔ WebM ↔ TS | Bit-perfect rewrap (`-c copy`) |
+| **Metadata Stripper** | Wipe titles, tags, and GPS data | `-map_metadata -1 -c copy` |
+| **Stream Inspector** | Deep probe of container, codecs, and layers | `ffprobe`-style logs (parsed) |
 
 ---
 
@@ -104,11 +124,12 @@ VideoTool/
 ├── public/
 │   └── _headers          # Cloudflare Pages COOP/COEP
 ├── src/
-│   ├── components/       # Layout, Sidebar, FileUploader, ProgressBar, LogConsole
-│   ├── context/          # FFmpegContext, ThemeContext
-│   └── tools/            # 6 processing tools
+│   ├── components/       # UI (Sidebar, VideoPreview, FileUploader, ProgressBar)
+│   ├── context/          # State (FFmpeg, Theme)
+│   ├── tools/            # 13 specialized processing tools
+│   └── utils/            # Shared utilities (download helpers)
 ├── vercel.json           # Vercel COOP/COEP headers
-└── vite.config.js        # Vite dev headers + WASM optimisation
+└── vite.config.js        # Vite dev headers + WASM optimization
 ```
 
 ---

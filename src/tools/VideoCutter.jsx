@@ -3,6 +3,7 @@ import FileUploader from '../components/FileUploader';
 import ProgressBar from '../components/ProgressBar';
 import VideoPreview from '../components/VideoPreview';
 import { useFFmpeg } from '../context/FFmpegContext';
+import { downloadBlob } from '../utils/download';
 import { fetchFile } from '@ffmpeg/util';
 import { Scissors, Info, CheckCircle } from 'lucide-react';
 
@@ -111,9 +112,9 @@ export default function VideoCutter() {
           <CheckCircle size={34} className="text-emerald-500" strokeWidth={1.5}/>
           <div className="text-center"><h3 className="font-heading font-semibold text-emerald-500 text-lg">Done instantly!</h3>
             <p className="text-sm mt-1 font-body" style={{ color:'var(--text-muted)' }}>Zero quality loss — stream copied</p></div>
-          <a href={URL.createObjectURL(outputBlob)} download={`cut_${file.name}`}
+          <button onClick={() => downloadBlob(outputBlob, `cut_${file.name}`)}
             className="px-8 py-3 rounded-xl font-heading font-semibold text-sm cursor-pointer transition-all hover:scale-105 text-emerald-600"
-            style={{ background:'var(--success-bg)', border:'1px solid var(--success-border)' }}>Download Result</a>
+            style={{ background:'var(--success-bg)', border:'1px solid var(--success-border)' }}>Download Result</button>
         </div>
       )}
     </div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import FileUploader from '../components/FileUploader';
 import ProgressBar from '../components/ProgressBar';
+import { downloadBlob } from '../utils/download';
 import { useFFmpeg } from '../context/FFmpegContext';
 import { fetchFile } from '@ffmpeg/util';
 import { CheckCircle, AlertCircle, Subtitles, Download } from 'lucide-react';
@@ -66,7 +67,7 @@ export default function SubtitleExtractor() {
     const zip=new JSZip();
     results.filter(r=>r.blob).forEach(r=>zip.file(r.name,r.blob));
     const blob=await zip.generateAsync({type:'blob'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='subtitles.zip'; a.click();
+    downloadBlob(blob, 'subtitles.zip');
   };
 
   return (
@@ -142,7 +143,7 @@ export default function SubtitleExtractor() {
             <div key={i} className="flex items-center gap-3 text-xs font-body px-3 py-2.5 rounded-xl" style={{background:'var(--bg-pill)'}}>
               {r.blob ? <CheckCircle size={13} className="text-emerald-500"/> : <AlertCircle size={13} className="text-rose-500"/>}
               <span className="truncate flex-1" style={{color:r.blob?'var(--text-primary)':'#f43f5e'}}>{r.name}</span>
-              {r.blob && <a href={URL.createObjectURL(r.blob)} download={r.name} className="flex items-center gap-1 text-indigo-500 hover:underline cursor-pointer flex-shrink-0"><Download size={11}/>Save</a>}
+              {r.blob && <button onClick={() => downloadBlob(r.blob, r.name)} className="flex items-center gap-1 text-indigo-500 hover:underline cursor-pointer flex-shrink-0"><Download size={11}/>Save</button>}
             </div>
           ))}
         </div>
