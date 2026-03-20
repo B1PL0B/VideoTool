@@ -126,10 +126,8 @@ export default function CopyrightRemover() {
                 <span className="text-sm font-heading font-semibold" style={{color:shuffle?'#f43f5e':'var(--text-primary)'}}>Shuffle Sequence</span></div>
               <p className="text-xs font-body mt-0.5" style={{color:'var(--text-faint)'}}>Randomizes fragment order — maximum disruption</p>
             </div>
-          </label>
-
-          {/* Fragment status list (live) */}
-          {fragStatus.length > 0 && (
+          </label>          {/* Fragment status list (live) */}
+          {fragStatus.length > 0 && !outputBlob && (
             <div className="max-h-36 overflow-y-auto scrollbar-hide space-y-1 pr-1">
               {fragStatus.map((f,i)=>(
                 <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-mono"
@@ -142,30 +140,41 @@ export default function CopyrightRemover() {
             </div>
           )}
 
-          <div className="flex gap-3">
-            <button onClick={()=>{setFile(null);setOutputBlob(null);setFragStatus([]);}} className="px-4 py-3 rounded-xl text-sm font-heading font-semibold cursor-pointer transition-all flex-shrink-0"
-              style={{background:'var(--bg-btn-ghost)',border:'1px solid var(--border-card)',color:'var(--text-secondary)'}}>Change</button>
-            <button disabled={processing} onClick={processVideo}
-              className="flex-1 py-3 rounded-xl font-heading font-semibold text-sm text-white cursor-pointer disabled:opacity-40 transition-all"
-              style={{background:'linear-gradient(135deg,#E11D48,#BE123C)',boxShadow:'0 0 24px rgba(225,29,72,0.35)'}}>
-              {processing ? statusText : 'Run Disruption Engine'}
-            </button>
-          </div>
+          {statusText.startsWith('Error') && (
+            <div className="p-4 rounded-xl text-sm font-body bg-rose-500/10 border border-rose-500/20 text-rose-500">
+              {statusText}
+            </div>
+          )}
+
+          {outputBlob ? (
+            <div className="flex flex-col items-center gap-4 py-7 rounded-2xl animate-slide-up"
+              style={{background:'var(--success-bg)',border:'1px solid var(--success-border)'}}>
+              <CheckCircle size={34} className="text-emerald-500" strokeWidth={1.5}/>
+              <div className="text-center"><h3 className="font-heading font-semibold text-emerald-500 text-lg">Disruption Complete</h3>
+                <p className="text-sm font-body mt-1" style={{color:'var(--text-muted)'}}>All fingerprints disrupted. File ready.</p></div>
+              <div className="flex gap-3">
+                <button onClick={()=>{setFile(null);setOutputBlob(null);setFragStatus([]);setStatusText('');}} className="px-5 py-3 rounded-xl font-heading font-semibold text-sm cursor-pointer transition-all"
+                  style={{background:'var(--bg-btn-ghost)',border:'1px solid var(--border-card)',color:'var(--text-secondary)'}}>Start Over</button>
+                <button onClick={() => downloadBlob(outputBlob, `bypassed_${file.name}`)}
+                  className="px-8 py-3 rounded-xl font-heading font-semibold text-sm cursor-pointer transition-all hover:scale-105 text-emerald-600 shadow-lg shadow-emerald-500/20"
+                  style={{background:'var(--success-bg)',border:'1px solid var(--success-border)'}}>Download Result</button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-3">
+              <button onClick={()=>{setFile(null);setOutputBlob(null);setFragStatus([]);setStatusText('');}} className="px-4 py-3 rounded-xl text-sm font-heading font-semibold cursor-pointer transition-all flex-shrink-0"
+                style={{background:'var(--bg-btn-ghost)',border:'1px solid var(--border-card)',color:'var(--text-secondary)'}}>Change</button>
+              <button disabled={processing} onClick={processVideo}
+                className="flex-1 py-3 rounded-xl font-heading font-semibold text-sm text-white cursor-pointer disabled:opacity-40 transition-all"
+                style={{background:'linear-gradient(135deg,#E11D48,#BE123C)',boxShadow:'0 0 24px rgba(225,29,72,0.35)'}}>
+                {processing ? statusText : 'Run Disruption Engine'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
       {processing && <ProgressBar progress={progress} statusText={statusText}/>}
-      {outputBlob && !processing && (
-        <div className="flex flex-col items-center gap-4 py-7 rounded-2xl animate-slide-up"
-          style={{background:'var(--success-bg)',border:'1px solid var(--success-border)'}}>
-          <CheckCircle size={34} className="text-emerald-500" strokeWidth={1.5}/>
-          <div className="text-center"><h3 className="font-heading font-semibold text-emerald-500 text-lg">Disruption Complete</h3>
-            <p className="text-sm font-body mt-1" style={{color:'var(--text-muted)'}}>All fingerprints disrupted. File ready.</p></div>
-          <button onClick={() => downloadBlob(outputBlob, `bypassed_${file.name}`)}
-            className="px-8 py-3 rounded-xl font-heading font-semibold text-sm cursor-pointer transition-all hover:scale-105 text-emerald-600"
-            style={{background:'var(--success-bg)',border:'1px solid var(--success-border)'}}>Download Scrubbed File</button>
-        </div>
-      )}
     </div>
   );
 }
