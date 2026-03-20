@@ -55,7 +55,7 @@ export default function CopyrightRemover() {
         setFragStatus([...statuses]);
         segs.push(sn); cur=end+skipL; i++;
       }
-      let final=[...segs];
+      await ffmpeg.deleteFile(inp);
       if(shuffle){setStatusText('Shuffling...');final.sort(()=>Math.random()-0.5);}
       setStatusText('Concatenating...'); setProgress(0.92);
       await ffmpeg.writeFile('concat.txt', new TextEncoder().encode(final.map(s=>`file '${s}'`).join('\n')));
@@ -63,10 +63,14 @@ export default function CopyrightRemover() {
       await ffmpeg.exec(['-f','concat','-safe','0','-i','concat.txt','-c','copy',out]);
       const data=await ffmpeg.readFile(out);
       setOutputBlob(new Blob([data.buffer],{type:file.type||'video/mp4'}));
-      await ffmpeg.deleteFile(inp); await ffmpeg.deleteFile('concat.txt'); await ffmpeg.deleteFile(out);
+      await ffmpeg.deleteFile('concat.txt'); await ffmpeg.deleteFile(out);
       for(const s of segs) await ffmpeg.deleteFile(s);
       setProgress(1);
-    } catch(e){console.error(e);setStatusText('Error: '+e.message);}
+    } catch(e){
+      console.error(e);
+      const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : 'WASM Abort/OOM');
+      setStatusText('Error: ' + msg);
+    }
     finally{setProcessing(false);ffmpeg.off('progress',onP);}
   };
 
