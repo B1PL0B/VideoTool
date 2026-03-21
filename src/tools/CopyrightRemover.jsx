@@ -42,30 +42,38 @@ export default function CopyrightRemover() {
       const ext=file.name.split('.').pop();
       await ffmpeg.writeFile(inp, await fetchFile(file));
 
+      // Strategy: cut each segment individually so audio is always cleanly
+      // trimmed at exact boundaries — avoids multi-output batch drift.
+      // Pattern: [keep segL sec] [skip skipL sec] [keep segL sec] ...
+      // Each kept segment is its own ffmpeg call: -ss <start> -t <segL> -c copy
       const segs=[]; let cur=0; let i=0;
-      const batchSize = 50; // process 50 segments at a time to avoid OOM
 
       while(cur < dur) {
-        const batchArgs = ['-i', inp];
-        const batchSegs = [];
+        const keepEnd = Math.min(cur + segL, dur);
+        const keepDur = keepEnd - cur;
+        const sn = `s_${i}.${ext}`;
 
-        for(let j=0; j<batchSize && cur<dur; j++) {
-          const end = Math.min(cur+segL, dur);
-          const sn = `s_${i}.${ext}`;
-          batchArgs.push('-ss', cur.toFixed(3), '-t', (end-cur).toFixed(3), '-c', 'copy', sn);
-          batchSegs.push(sn);
-          cur = end + skipL;
-          i++;
-        }
+        setStatusText(`Cutting segment ${i + 1}...`);
+        // Individual seek + trim per segment keeps PTS/DTS consistent
+        await ffmpeg.exec([
+          '-ss', cur.toFixed(3),
+          '-i', inp,
+          '-t', keepDur.toFixed(3),
+          '-c', 'copy',
+          '-avoid_negative_ts', 'make_zero',
+          sn
+        ]);
 
-        setStatusText(`Cutting batch ${Math.ceil(i/batchSize)}...`);
-        await ffmpeg.exec(batchArgs);
-        segs.push(...batchSegs);
-        setFragStatus(segs.map(s => ({ name: s, status: 'done' })));
-        setProgress((cur/dur) * 0.85);
+        segs.push(sn);
+        setFragStatus([...segs.map(s => ({ name: s, status: 'done' }))]);
+        setProgress((keepEnd / dur) * 0.85);
+
+        // Advance: skip the keep window + the skip gap (both with audio)
+        cur = keepEnd + skipL;
+        i++;
       }
 
-      await ffmpeg.deleteFile(inp); // Clear original
+      await ffmpeg.deleteFile(inp);
 
       let final = [...segs];
       if(shuffle) {
