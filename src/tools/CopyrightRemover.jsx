@@ -42,63 +42,85 @@ export default function CopyrightRemover() {
       const ext=file.name.split('.').pop();
       await ffmpeg.writeFile(inp, await fetchFile(file));
 
-      // Strategy: cut each segment individually so audio is always cleanly
-      // trimmed at exact boundaries — avoids multi-output batch drift.
-      // Pattern: [keep segL sec] [skip skipL sec] [keep segL sec] ...
-      // Each kept segment is its own ffmpeg call: -ss <start> -t <segL> -c copy
-      const segs=[]; let cur=0; let i=0;
-
+      // Build full segment list upfront
+      const segTimes=[]; let cur=0;
       while(cur < dur) {
-        const keepEnd = Math.min(cur + segL, dur);
-        const keepDur = keepEnd - cur;
-        const sn = `s_${i}.${ext}`;
+        const keepDur = Math.min(segL, dur - cur);
+        segTimes.push({ start: cur, dur: keepDur });
+        cur += keepDur + skipL;
+      }
 
-        setStatusText(`Cutting segment ${i + 1}...`);
-        // Individual seek + trim per segment keeps PTS/DTS consistent
-        await ffmpeg.exec([
-          '-ss', cur.toFixed(3),
-          '-i', inp,
-          '-t', keepDur.toFixed(3),
-          '-c', 'copy',
-          '-avoid_negative_ts', 'make_zero',
-          sn
-        ]);
+      if(shuffle) {
+        setStatusText('Shuffling fragments...');
+        segTimes.sort(() => Math.random() - 0.5);
+      }
 
-        segs.push(sn);
-        setFragStatus([...segs.map(s => ({ name: s, status: 'done' }))]);
-        setProgress((keepEnd / dur) * 0.85);
+      // Batch-flush strategy: cut N segments → concat to intermediate → delete segments
+      // This keeps WASM FS memory bounded regardless of total segment count.
+      const BATCH = 8;
+      const intermediates = [];
 
-        // Advance: skip the keep window + the skip gap (both with audio)
-        cur = keepEnd + skipL;
-        i++;
+      for(let b=0; b<segTimes.length; b+=BATCH) {
+        const batch = segTimes.slice(b, b+BATCH);
+        const batchSegs = [];
+
+        for(let j=0; j<batch.length; j++) {
+          const { start, dur: d } = batch[j];
+          const idx = b + j;
+          const sn = `s_${idx}.${ext}`;
+
+          setStatusText(`Cutting segment ${idx+1} / ${segTimes.length}...`);
+          // -ss before -i = fast seek; each segment gets fresh timestamps
+          await ffmpeg.exec([
+            '-ss', start.toFixed(3),
+            '-i', inp,
+            '-t', d.toFixed(3),
+            '-c', 'copy',
+            '-avoid_negative_ts', 'make_zero',
+            sn
+          ]);
+
+          batchSegs.push(sn);
+          setFragStatus(prev => [...prev, { name: sn, status: 'done' }]);
+          setProgress(((b+j+1) / segTimes.length) * 0.80);
+        }
+
+        // Concat this batch into a small intermediate file
+        const bIdx = Math.floor(b / BATCH);
+        const im = `im_${bIdx}.${ext}`;
+        const concatList = `cl_${bIdx}.txt`;
+        setStatusText(`Merging batch ${bIdx+1}...`);
+        await ffmpeg.writeFile(concatList, new TextEncoder().encode(batchSegs.map(s=>`file '${s}'`).join('\n')));
+        await ffmpeg.exec(['-f','concat','-safe','0','-i',concatList,'-c','copy',im]);
+
+        // Free segment files immediately to release WASM FS memory
+        await ffmpeg.deleteFile(concatList);
+        for(const s of batchSegs) await ffmpeg.deleteFile(s);
+
+        intermediates.push(im);
       }
 
       await ffmpeg.deleteFile(inp);
 
-      let final = [...segs];
-      if(shuffle) {
-        setStatusText('Shuffling fragments...');
-        final.sort(() => Math.random() - 0.5);
-      }
-
-      setStatusText('Stitching back together...');
-      await ffmpeg.writeFile('concat.txt', new TextEncoder().encode(final.map(s => `file '${s}'`).join('\n')));
+      // Final stitch of intermediates
+      setStatusText('Final stitch...');
+      await ffmpeg.writeFile('concat_final.txt', new TextEncoder().encode(intermediates.map(s=>`file '${s}'`).join('\n')));
       const out = `final_bypassed.${ext}`;
-      await ffmpeg.exec(['-f', 'concat', '-safe', '0', '-i', 'concat.txt', '-c', 'copy', out]);
+      await ffmpeg.exec(['-f','concat','-safe','0','-i','concat_final.txt','-c','copy',out]);
 
       const data = await ffmpeg.readFile(out);
       setOutputBlob(new Blob([data.buffer], { type: file.type || 'video/mp4' }));
 
       // Cleanup
-      await ffmpeg.deleteFile('concat.txt');
+      await ffmpeg.deleteFile('concat_final.txt');
       await ffmpeg.deleteFile(out);
-      for(const s of segs) await ffmpeg.deleteFile(s);
+      for(const im of intermediates) await ffmpeg.deleteFile(im);
 
       setProgress(1);
       setStatusText('Complete');
     } catch(e) {
       console.error('Processing error:', e);
-      const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : 'WASM memory limit reached. Try larger segments (8s+) to reduce file count.');
+      const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : 'Processing failed. Try a larger segment size (8s+).');
       setStatusText('Error: ' + msg);
     } finally {
       setProcessing(false);
