@@ -39,15 +39,15 @@ export default function CopyrightRemover() {
       const dur = await getDuration(file);
       if (!dur) throw new Error('Cannot read video duration');
       const inp=`inp_${file.name.replace(/[^a-zA-Z0-9.]/g,'_')}`;
-      const ext=file.name.split('.').pop();
+      setStatusText('Loading file into WASM...');
       await ffmpeg.writeFile(inp, await fetchFile(file));
 
-      // Build full segment list upfront
+      // Build segment list
       const segTimes=[]; let cur=0;
       while(cur < dur) {
-        const keepDur = Math.min(segL, dur - cur);
-        segTimes.push({ start: cur, dur: keepDur });
-        cur += keepDur + skipL;
+        const d = Math.min(segL, dur - cur);
+        segTimes.push({ start: cur, dur: d });
+        cur += d + skipL;
       }
 
       if(shuffle) {
@@ -55,78 +55,85 @@ export default function CopyrightRemover() {
         segTimes.sort(() => Math.random() - 0.5);
       }
 
-      // Batch-flush strategy: cut N segments → concat to intermediate → delete segments
-      // This keeps WASM FS memory bounded regardless of total segment count.
-      const BATCH = 8;
-      const intermediates = [];
+      // Show all segments immediately in the status list
+      setFragStatus(segTimes.map((s,i) => ({
+        name: `seg_${i+1}  ${s.start.toFixed(1)}s → ${(s.start+s.dur).toFixed(1)}s`,
+        status: 'done'
+      })));
 
-      for(let b=0; b<segTimes.length; b+=BATCH) {
-        const batch = segTimes.slice(b, b+BATCH);
-        const batchSegs = [];
+      // ── Single-pass filter_complex ────────────────────────────────────────
+      // All trim/concat happens inside ONE ffmpeg.exec() call.
+      // WASM FS holds only: inp + out (no per-segment files → no heap growth).
+      // ─────────────────────────────────────────────────────────────────────
+      setStatusText('Building filter graph...');
+      const n = segTimes.length;
 
-        for(let j=0; j<batch.length; j++) {
-          const { start, dur: d } = batch[j];
-          const idx = b + j;
-          const sn = `s_${idx}.${ext}`;
-
-          setStatusText(`Cutting segment ${idx+1} / ${segTimes.length}...`);
-          // -ss before -i = fast seek; each segment gets fresh timestamps
-          await ffmpeg.exec([
-            '-ss', start.toFixed(3),
-            '-i', inp,
-            '-t', d.toFixed(3),
-            '-c', 'copy',
-            '-avoid_negative_ts', 'make_zero',
-            sn
-          ]);
-
-          batchSegs.push(sn);
-          setFragStatus(prev => [...prev, { name: sn, status: 'done' }]);
-          setProgress(((b+j+1) / segTimes.length) * 0.80);
+      const buildFilter = (hasAudio) => {
+        const parts = [];
+        for(let i=0; i<n; i++) {
+          const s = segTimes[i].start.toFixed(3);
+          const d = segTimes[i].dur.toFixed(3);
+          parts.push(`[0:v]trim=start=${s}:duration=${d},setpts=PTS-STARTPTS[v${i}]`);
+          if(hasAudio)
+            parts.push(`[0:a]atrim=start=${s}:duration=${d},asetpts=PTS-STARTPTS[a${i}]`);
         }
+        const vInputs = segTimes.map((_,i)=>`[v${i}]`).join('');
+        const aInputs = hasAudio ? segTimes.map((_,i)=>`[a${i}]`).join('') : '';
+        const va = hasAudio ? `${vInputs}${aInputs}` : vInputs;
+        const outSpec = hasAudio
+          ? `${va}concat=n=${n}:v=1:a=1[outv][outa]`
+          : `${va}concat=n=${n}:v=1:a=0[outv]`;
+        parts.push(outSpec);
+        return parts.join(';');
+      };
 
-        // Concat this batch into a small intermediate file
-        const bIdx = Math.floor(b / BATCH);
-        const im = `im_${bIdx}.${ext}`;
-        const concatList = `cl_${bIdx}.txt`;
-        setStatusText(`Merging batch ${bIdx+1}...`);
-        await ffmpeg.writeFile(concatList, new TextEncoder().encode(batchSegs.map(s=>`file '${s}'`).join('\n')));
-        await ffmpeg.exec(['-f','concat','-safe','0','-i',concatList,'-c','copy',im]);
+      const out = 'final_bypassed.mp4';
+      setStatusText('Processing (single-pass)... this may take a moment');
+      setProgress(0.05);
 
-        // Free segment files immediately to release WASM FS memory
-        await ffmpeg.deleteFile(concatList);
-        for(const s of batchSegs) await ffmpeg.deleteFile(s);
+      const runExec = async (hasAudio) => {
+        const maps = hasAudio
+          ? ['-map','[outv]','-map','[outa]','-c:a','aac','-b:a','192k']
+          : ['-map','[outv]'];
+        await ffmpeg.exec([
+          '-i', inp,
+          '-filter_complex', buildFilter(hasAudio),
+          ...maps,
+          '-c:v', 'libx264',
+          '-preset', 'ultrafast',
+          '-crf', '18',
+          '-movflags', '+faststart',
+          out
+        ]);
+      };
 
-        intermediates.push(im);
+      // Try with audio; silently retry video-only if no audio stream exists
+      try {
+        await runExec(true);
+      } catch {
+        await runExec(false);
       }
 
-      await ffmpeg.deleteFile(inp);
-
-      // Final stitch of intermediates
-      setStatusText('Final stitch...');
-      await ffmpeg.writeFile('concat_final.txt', new TextEncoder().encode(intermediates.map(s=>`file '${s}'`).join('\n')));
-      const out = `final_bypassed.${ext}`;
-      await ffmpeg.exec(['-f','concat','-safe','0','-i','concat_final.txt','-c','copy',out]);
-
+      setProgress(0.95);
+      setStatusText('Exporting...');
       const data = await ffmpeg.readFile(out);
-      setOutputBlob(new Blob([data.buffer], { type: file.type || 'video/mp4' }));
+      setOutputBlob(new Blob([data.buffer], { type: 'video/mp4' }));
 
-      // Cleanup
-      await ffmpeg.deleteFile('concat_final.txt');
+      await ffmpeg.deleteFile(inp);
       await ffmpeg.deleteFile(out);
-      for(const im of intermediates) await ffmpeg.deleteFile(im);
 
       setProgress(1);
       setStatusText('Complete');
     } catch(e) {
       console.error('Processing error:', e);
-      const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : 'Processing failed. Try a larger segment size (8s+).');
+      const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : 'Processing failed. Try a larger segment size or a shorter/smaller video.');
       setStatusText('Error: ' + msg);
     } finally {
       setProcessing(false);
       ffmpeg.off('progress',onP);
     }
   };
+
 
   const NumInput=({label,sub,value,onChange})=>(
     <div>
