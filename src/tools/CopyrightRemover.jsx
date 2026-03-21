@@ -36,14 +36,16 @@ export default function CopyrightRemover() {
     setFragStatus([]); setStatusText('Initializing WASM...');
     const onP=({progress})=>setProgress(progress); ffmpeg.on('progress',onP);
 
-    // Stable names outside try/catch so finally can always clean them up
-    const inp = 'cr_input.mp4';
-    const out = 'cr_output.mp4';
+    // Preserve original extension; stable names so finally can always clean up
+    const ext = (file.name.split('.').pop() || 'mp4').toLowerCase();
+    const inp    = `cr_input.${ext}`;
+    const concat = 'cr_concat.txt';
+    const out    = `cr_output.${ext}`;
     const safeDelete = async (n) => { try { await ffmpeg.deleteFile(n); } catch {} };
 
     try {
-      // Wipe any stale files left by a previous failed run
-      await safeDelete(inp); await safeDelete(out);
+      // Pre-clean any stale files from a previous failed run
+      await safeDelete(inp); await safeDelete(concat); await safeDelete(out);
 
       const dur = await getDuration(file);
       if (!dur) throw new Error('Cannot read video duration');
@@ -54,7 +56,7 @@ export default function CopyrightRemover() {
       const segTimes=[]; let cur=0;
       while(cur < dur) {
         const d = Math.min(segL, dur - cur);
-        segTimes.push({ start: cur, dur: d });
+        segTimes.push({ start: cur, end: +(cur + d).toFixed(3) });
         cur += d + skipL;
       }
 
@@ -65,67 +67,46 @@ export default function CopyrightRemover() {
 
       // Show all segments immediately in the status list
       setFragStatus(segTimes.map((s,i) => ({
-        name: `seg_${i+1}  ${s.start.toFixed(1)}s → ${(s.start+s.dur).toFixed(1)}s`,
+        name: `seg_${i+1}  ${s.start.toFixed(1)}s → ${s.end.toFixed(1)}s`,
         status: 'done'
       })));
 
-      // ── Single-pass filter_complex ────────────────────────────────────────
-      // All trim/concat happens inside ONE ffmpeg.exec() call.
-      // WASM FS holds only: inp + out (no per-segment files → no heap growth).
-      // ─────────────────────────────────────────────────────────────────────
-      setStatusText('Building filter graph...');
-      const n = segTimes.length;
+      // ── Concat demuxer with inpoint/outpoint ─────────────────────────────
+      // The concat.txt references the SAME input file N times with different
+      // time windows. FFmpeg seeks inside the file — zero extra files created.
+      // WASM FS holds only: inp + concat.txt (tiny) + out.
+      // -c copy = pure stream copy, no decode, works with ANY codec.
+      // ────────────────────────────────────────────────────────────────────
+      setStatusText('Building concat list...');
+      const concatLines = segTimes.flatMap(s => [
+        `file '${inp}'`,
+        `inpoint ${s.start.toFixed(3)}`,
+        `outpoint ${s.end.toFixed(3)}`
+      ]).join('\n');
+      await ffmpeg.writeFile(concat, new TextEncoder().encode(concatLines));
 
-      const buildFilter = (hasAudio) => {
-        const parts = [];
-        for(let i=0; i<n; i++) {
-          const s = segTimes[i].start.toFixed(3);
-          const d = segTimes[i].dur.toFixed(3);
-          parts.push(`[0:v]trim=start=${s}:duration=${d},setpts=PTS-STARTPTS[v${i}]`);
-          if(hasAudio)
-            parts.push(`[0:a]atrim=start=${s}:duration=${d},asetpts=PTS-STARTPTS[a${i}]`);
-        }
-        const vInputs = segTimes.map((_,i)=>`[v${i}]`).join('');
-        const aInputs = hasAudio ? segTimes.map((_,i)=>`[a${i}]`).join('') : '';
-        const va = hasAudio ? `${vInputs}${aInputs}` : vInputs;
-        const outSpec = hasAudio
-          ? `${va}concat=n=${n}:v=1:a=1[outv][outa]`
-          : `${va}concat=n=${n}:v=1:a=0[outv]`;
-        parts.push(outSpec);
-        return parts.join(';');
-      };
+      setStatusText('Processing (stream copy)...');
+      setProgress(0.1);
 
-      setStatusText('Processing (single-pass)...');
-      setProgress(0.05);
+      const ret = await ffmpeg.exec([
+        '-f', 'concat', '-safe', '0',
+        '-i', concat,
+        '-c', 'copy',
+        '-movflags', '+faststart',
+        '-y',
+        out
+      ]);
 
-      const runExec = async (hasAudio) => {
-        const maps = hasAudio
-          ? ['-map','[outv]','-map','[outa]','-c:a','aac','-b:a','192k']
-          : ['-map','[outv]'];
-        await ffmpeg.exec([
-          '-i', inp,
-          '-filter_complex', buildFilter(hasAudio),
-          ...maps,
-          '-c:v', 'libx264',
-          '-preset', 'ultrafast',
-          '-crf', '18',
-          '-movflags', '+faststart',
-          out
-        ]);
-      };
-
-      // Try with audio; on failure purge the partial output then retry video-only
-      try {
-        await runExec(true);
-      } catch {
-        await safeDelete(out); // must remove partial file before second write
-        await runExec(false);
+      // exec() in @ffmpeg/ffmpeg@0.12.x returns exit code — does NOT throw.
+      // Must check manually; otherwise readFile throws ErrnoError on missing file.
+      if (ret !== 0) {
+        throw new Error(`FFmpeg exited with code ${ret}. Open browser console → FFMPEG log for details.`);
       }
 
       setProgress(0.95);
       setStatusText('Exporting...');
       const data = await ffmpeg.readFile(out);
-      setOutputBlob(new Blob([data.buffer], { type: 'video/mp4' }));
+      setOutputBlob(new Blob([data.buffer], { type: file.type || 'video/mp4' }));
 
       setProgress(1);
       setStatusText('Complete');
@@ -134,8 +115,8 @@ export default function CopyrightRemover() {
       const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : 'Processing failed. Try a larger segment or a smaller video.');
       setStatusText('Error: ' + msg);
     } finally {
-      // Always clean WASM FS — next run must start from a blank slate
-      await safeDelete(inp); await safeDelete(out);
+      // Always wipe WASM FS — next run must start from a blank slate
+      await safeDelete(inp); await safeDelete(concat); await safeDelete(out);
       setProcessing(false);
       ffmpeg.off('progress',onP);
     }
