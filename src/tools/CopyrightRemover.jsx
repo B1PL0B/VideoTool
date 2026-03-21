@@ -35,10 +35,18 @@ export default function CopyrightRemover() {
     setProcessing(true); setProgress(0); setOutputBlob(null);
     setFragStatus([]); setStatusText('Initializing WASM...');
     const onP=({progress})=>setProgress(progress); ffmpeg.on('progress',onP);
+
+    // Stable names outside try/catch so finally can always clean them up
+    const inp = 'cr_input.mp4';
+    const out = 'cr_output.mp4';
+    const safeDelete = async (n) => { try { await ffmpeg.deleteFile(n); } catch {} };
+
     try {
+      // Wipe any stale files left by a previous failed run
+      await safeDelete(inp); await safeDelete(out);
+
       const dur = await getDuration(file);
       if (!dur) throw new Error('Cannot read video duration');
-      const inp=`inp_${file.name.replace(/[^a-zA-Z0-9.]/g,'_')}`;
       setStatusText('Loading file into WASM...');
       await ffmpeg.writeFile(inp, await fetchFile(file));
 
@@ -87,8 +95,7 @@ export default function CopyrightRemover() {
         return parts.join(';');
       };
 
-      const out = 'final_bypassed.mp4';
-      setStatusText('Processing (single-pass)... this may take a moment');
+      setStatusText('Processing (single-pass)...');
       setProgress(0.05);
 
       const runExec = async (hasAudio) => {
@@ -107,10 +114,11 @@ export default function CopyrightRemover() {
         ]);
       };
 
-      // Try with audio; silently retry video-only if no audio stream exists
+      // Try with audio; on failure purge the partial output then retry video-only
       try {
         await runExec(true);
       } catch {
+        await safeDelete(out); // must remove partial file before second write
         await runExec(false);
       }
 
@@ -119,16 +127,15 @@ export default function CopyrightRemover() {
       const data = await ffmpeg.readFile(out);
       setOutputBlob(new Blob([data.buffer], { type: 'video/mp4' }));
 
-      await ffmpeg.deleteFile(inp);
-      await ffmpeg.deleteFile(out);
-
       setProgress(1);
       setStatusText('Complete');
     } catch(e) {
       console.error('Processing error:', e);
-      const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : 'Processing failed. Try a larger segment size or a shorter/smaller video.');
+      const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : 'Processing failed. Try a larger segment or a smaller video.');
       setStatusText('Error: ' + msg);
     } finally {
+      // Always clean WASM FS — next run must start from a blank slate
+      await safeDelete(inp); await safeDelete(out);
       setProcessing(false);
       ffmpeg.off('progress',onP);
     }
